@@ -1,0 +1,5 @@
+{application, btree,
+ [{description, "B-tree sets library"},
+  {vsn, "0.1" }, % FIXME: change to 'git'
+  {modules, [btree]}
+ ]}.

@@ -1,0 +1,15 @@
+* deletes sometimes write repeatedly to the same page, and sometimes
+  write before delete of some pages; add cache to avoid redundant I/O
+  (it should be delete-specific, insert doesn't need it)
+* store data in top-level B-tree object without indirecting to root page;
+  helps keeping data for small embedded B-trees directly in enclosing objects;
+  insertion is easy to adjust, but not deletion; deletion in this case would
+  be helped by the cache
+* sometimes delete writes an empty E before deleting that page,
+  is that a bug?
+* specialize search for membership test (avoid consing up the path)
+* add randomized testing (e.g. proper)
+* check if using maps instead of tuples would be beneficial:
+  - check size of external representation
+  - check cost of binary_to_term/term_to_binary of maps
+  - problem: splitting maps is more expensive than splitting tuples
