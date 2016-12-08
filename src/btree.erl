@@ -65,6 +65,7 @@
 
 %%%_* Types and macros =========================================================
 
+%-define(DEBUG, true).
 -ifdef(DEBUG).
 -define(dbg(Fmt, Args), io:format(Fmt, Args)).
 -else.
@@ -241,34 +242,39 @@ split(N, U, E, R) ->
 
 %%%_* Deletion in a B-tree =====================================================
 %%%
-%%% FIXME: It's quite common for pages to be inspected and updated multiple times
-%%% during deletions, and sometimes first updated and then deleted.  We should have
-%%% a cache and not flush writes or deletes until the entire flow is finished.
+%%% Deletion sometimes inspects and updates pages multiple times, so we use a
+%%% simple cache to avoid redundant I/O operations here.
 
-delete(IO, X, Btree = #btree{order = N, root = RootPageId}) ->
-  case delete(IO, N, X, RootPageId) of
-    true ->
+delete(IO, X, Btree) ->
+  Cache1 = mkcache(IO),
+  {Cache2, Btree2} = delete_1(Cache1, X, Btree),
+  cache_flush(Cache2),
+  Btree2.
+
+delete_1(Cache1, X, Btree = #btree{order = N, root = RootPageId}) ->
+  case delete(Cache1, N, X, RootPageId) of
+    {Cache2, true} ->
       %% base page size was reduced
-      #page{p0 = P0, e = E} = page_read(IO, RootPageId),
+      {Cache3, #page{p0 = P0, e = E}} = cache_read(Cache2, RootPageId),
       if size(E) =:= 0 ->
-          page_delete(IO, RootPageId),
-          Btree#btree{root = P0};
+          Cache4 = cache_delete(Cache3, RootPageId),
+          {Cache4, Btree#btree{root = P0}};
          true ->
-          Btree
+          {Cache3, Btree}
       end;
-    false ->
-      Btree
+    {Cache2, false} ->
+      {Cache2, Btree}
   end.
 
 %%% Search and delete key X in B-tree A; if a page underflow is
 %%% necessary, balance with adjacent page if possible, otherwise merge;
 %%% return true if page A becomes undersize.
-delete(IO, N, X, APageId) ->
+delete(Cache1, N, X, APageId) ->
   if APageId =:= ?NOPAGEID ->
       ?dbg("delete(~p, ~p)~n", [X, []]),
       false;
      true ->
-      #page{p0 = AP0, e = AE} = A = page_read(IO, APageId),
+      {Cache2, A = #page{p0 = AP0, e = AE}} = cache_read(Cache1, APageId),
       ?dbg("delete(~p, ~p)~n", [X, A]),
       case binsearch(AE, X) of
         {found, K} ->
@@ -281,14 +287,14 @@ delete(IO, N, X, APageId) ->
           if QPageId =:= ?NOPAGEID ->
               %% a is a terminal page
               AE2 = erlang:delete_element(K, AE),
-              page_write(IO, A#page{e = AE2}),
-              size(AE2) < N;
+              Cache3 = cache_write(Cache2, A#page{e = AE2}),
+              {Cache3, size(AE2) < N};
              true ->
-              case del(IO, N, QPageId, APageId, K) of
-                true ->
-                  underflow(IO, N, APageId, QPageId, R);
-                false ->
-                  false
+              case del(Cache2, N, QPageId, APageId, K) of
+                {Cache3, true} ->
+                  underflow(Cache3, N, APageId, QPageId, R);
+                {Cache3, false} ->
+                  {Cache3, false}
               end
           end;
         {not_found, R} ->
@@ -296,49 +302,49 @@ delete(IO, N, X, APageId) ->
             if R =:= 0 -> AP0;
                true -> (element(R, AE))#item.p
             end,
-          case delete(IO, N, X, QPageId) of
-            true ->
-              underflow(IO, N, APageId, QPageId, R);
-            false ->
-              false
+          case delete(Cache2, N, X, QPageId) of
+            {Cache3, true} ->
+              underflow(Cache3, N, APageId, QPageId, R);
+            {Cache3, false} ->
+              {Cache3, false}
           end
       end
   end.
 
-del(IO, N, PPageId, APageId, K) ->
-  #page{e = PE} = P = page_read(IO, PPageId),
-  ?dbg("del(~p, ~p, ~p)~n", [P, page_read(IO, APageId), K]),
+del(Cache1, N, PPageId, APageId, K) ->
+  {Cache2, P = #page{e = PE}} = cache_read(Cache1, PPageId),
+  ?dbg("del(~p, ~p, ~p)~n", [P, APageId, K]),
   PEM = element(size(PE), PE),
   QPageId = PEM#item.p,
   if QPageId =/= ?NOPAGEID ->
-      case del(IO, N, QPageId, APageId, K) of
-        true ->
-          underflow(IO, N, PPageId, QPageId, size(PE));
-        false ->
-          false
+      case del(Cache2, N, QPageId, APageId, K) of
+        {Cache3, true} ->
+          underflow(Cache3, N, PPageId, QPageId, size(PE));
+        {Cache3, false} ->
+          {Cache3, false}
       end;
      true ->
-      #page{e = AE} = A = page_read(IO, APageId),
+      {Cache3, A = #page{e = AE}} = cache_read(Cache2, APageId),
       %% Wirth's code appears to perform several reundant assignments in this case.
       AE2 = setelement(K, AE, (element(K, AE))#item{k = PEM#item.k}),
       PE2 = erlang:delete_element(size(PE), PE),
-      page_write(IO, A#page{e = AE2}),
-      page_write(IO, P#page{e = PE2}),
-      size(PE2) < N
+      Cache4 = cache_write(Cache3, A#page{e = AE2}),
+      Cache5 = cache_write(Cache4, P#page{e = PE2}),
+      {Cache5, size(PE2) < N}
   end.
 
 %% Page A, referenced from page C at index S, is undersize (size(E) == N-1).
 %% Fix that by borrowing from or merging with an adjacent page B.
 %% Return true if C becomes undersize, false otherwise.
-underflow(IO, N, CPageId, APageId, S) ->
-  #page{p0 = CP0, e = CE} = C = page_read(IO, CPageId),
-  #page{p0 = AP0, e = AE} = A = page_read(IO, APageId),
+underflow(Cache1, N, CPageId, APageId, S) ->
+  {Cache2, C = #page{p0 = CP0, e = CE}} = cache_read(Cache1, CPageId),
+  {Cache3, A = #page{p0 = AP0, e = AE}} = cache_read(Cache2, APageId),
   ?dbg("underflow(~p, ~p, ~p)~n", [C, A, S]),
   if S < size(CE) ->
       %% b = page to the right of a
       S1 = S + 1,
       BPageId = (element(S1, CE))#item.p,
-      #page{p0 = BP0, e = BE} = B = page_read(IO, BPageId),
+      {Cache4, B = #page{p0 = BP0, e = BE}} = cache_read(Cache3, BPageId),
       MB = size(BE),
       K = (MB - N + 1) div 2,
       %% k = no. of items available on adjacent page b
@@ -349,18 +355,18 @@ underflow(IO, N, CPageId, APageId, S) ->
           {BE1, [#item{k = BEKk, p = BEKp} | BE2]} = lists:split(K - 1, tuple_to_list(BE)),
           AE2 = list_to_tuple(tuple_to_list(AE) ++ [U] ++ BE1),
           CE2 = setelement(S1, CE, #item{k = BEKk, p = BPageId}),
-          page_write(IO, A#page{e = AE2}),
-          page_write(IO, C#page{e = CE2}),
-          page_write(IO, B#page{p0 = BEKp, e = list_to_tuple(BE2)}),
-          false;
+          Cache5 = cache_write(Cache4, A#page{e = AE2}),
+          Cache6 = cache_write(Cache5, C#page{e = CE2}),
+          Cache7 = cache_write(Cache6, B#page{p0 = BEKp, e = list_to_tuple(BE2)}),
+          {Cache7, false};
          true ->
           %% merge pages a and b
           AE2 = list_to_tuple(tuple_to_list(AE) ++ [U] ++ tuple_to_list(BE)),
           CE2 = erlang:delete_element(S1, CE),
-          page_write(IO, A#page{e = AE2}),
-          page_write(IO, C#page{e = CE2}),
-          page_delete(IO, BPageId),
-          size(CE2) < N
+          Cache5 = cache_write(Cache4, A#page{e = AE2}),
+          Cache6 = cache_write(Cache5, C#page{e = CE2}),
+          Cache7 = cache_delete(Cache6, BPageId),
+          {Cache7, size(CE2) < N}
       end;
      true ->
       %% b = page to the left of a
@@ -368,7 +374,7 @@ underflow(IO, N, CPageId, APageId, S) ->
         if S =:= 1 -> CP0;
            true -> (element(S - 1, CE))#item.p
         end,
-      #page{e = BE} = B = page_read(IO, BPageId),
+      {Cache4, B = #page{e = BE}} = cache_read(Cache3, BPageId),
       MB = size(BE) + 1,
       K = (MB - N) div 2,
       if K > 0 ->
@@ -378,20 +384,73 @@ underflow(IO, N, CPageId, APageId, S) ->
           {BE1, [#item{k = BEBM2k, p = BEMB2p} | BE2]} = lists:split(MB2 - 1, tuple_to_list(BE)),
           AE2 = list_to_tuple(BE2 ++ [U] ++ tuple_to_list(AE)),
           CE2 = setelement(S, CE, #item{k = BEBM2k, p = APageId}),
-          page_write(IO, A#page{p0 = BEMB2p, e = AE2}),
-          page_write(IO, B#page{e = list_to_tuple(BE1)}),
-          page_write(IO, C#page{e = CE2}),
-          false;
+          Cache5 = cache_write(Cache4, A#page{p0 = BEMB2p, e = AE2}),
+          Cache6 = cache_write(Cache5, B#page{e = list_to_tuple(BE1)}),
+          Cache7 = cache_write(Cache6, C#page{e = CE2}),
+          {Cache7, false};
          true ->
           %% merge pages a and b
           U = #item{k = (element(S, CE))#item.k, p = AP0},
           BE2 = list_to_tuple(tuple_to_list(BE) ++ [U] ++ tuple_to_list(AE)),
-          page_write(IO, B#page{e = BE2}),
-          page_write(IO, C#page{e = erlang:delete_element(S, CE)}),
-          page_delete(IO, APageId),
-          (S - 1) < N
+          Cache5 = cache_write(Cache4, B#page{e = BE2}),
+          Cache6 = cache_write(Cache5, C#page{e = erlang:delete_element(S, CE)}),
+          Cache7 = cache_delete(Cache6, APageId),
+          {Cache7, (S - 1) < N}
       end
   end.
+
+%%%_* Page I/O cache for delete ================================================
+%%%
+%%% The B-trees are expected to be shallow, so the number of pages touched
+%%% during delete will be few.  Therefore, the cache is simply a list.
+%%%
+%%% INV: There is at most one entry per PageId in the cache.
+
+%-define(NOCACHE, true).
+-ifdef(NOCACHE).
+
+mkcache(IO)              -> IO.
+cache_flush(_IO)         -> ok.
+cache_read(IO, PageId)   -> {IO, page_read(IO, PageId)}.
+cache_write(IO, Page)    -> page_write(IO, Page), IO.
+cache_delete(IO, PageId) -> page_delete(IO, PageId), IO.
+
+-else. % not NOCACHE
+
+-record(cache, {io, entries}).
+
+mkcache(IO) ->
+  #cache{io = IO, entries = []}.
+
+cache_flush(#cache{io = IO, entries = Entries}) ->
+  [case Entry of
+     {_PageId, clean, _Page} -> ok;
+     {_PageId, dirty, Page} -> page_write(IO, Page);
+     {PageId, deleted} -> page_delete(IO, PageId)
+   end || Entry <- Entries],
+  ok.
+
+cache_read(Cache = #cache{io = IO, entries = Entries}, PageId) ->
+  case lists:keyfind(PageId, 1, Entries) of
+    {_PageId, clean, Page} -> {Cache, Page};
+    {_PageId, dirty, Page} -> {Cache, Page};
+    %% deliberate crash if deleted
+    false ->
+      Page = page_read(IO, PageId),
+      NewEntries = [{PageId, clean, Page} | Entries],
+      {Cache#cache{entries = NewEntries}, Page}
+  end.
+
+cache_write(Cache = #cache{entries = Entries},
+            Page = #page{pageid = PageId}) ->
+  NewEntries = lists:keystore(PageId, 1, Entries, {PageId, dirty, Page}),
+  Cache#cache{entries = NewEntries}.
+
+cache_delete(Cache = #cache{entries = Entries}, PageId) ->
+  NewEntries = lists:keystore(PageId, 1, Entries, {PageId, deleted}),
+  Cache#cache{entries = NewEntries}.
+
+-endif. % not NOCACHE
 
 %%%_* Page I/O =================================================================
 %%%

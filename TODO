@@ -1,6 +1,3 @@
-* deletes sometimes write repeatedly to the same page, and sometimes
-  write before delete of some pages; add cache to avoid redundant I/O
-  (it should be delete-specific, insert doesn't need it)
 * store data in top-level B-tree object without indirecting to root page;
   helps keeping data for small embedded B-trees directly in enclosing objects;
   insertion is easy to adjust, but not deletion; deletion in this case would
