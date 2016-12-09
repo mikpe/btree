@@ -32,7 +32,8 @@
 %%%   pages and indices recording the path from the root to the key.
 %%%   Insertion uses that stack to navigate the tree when rewriting it.
 %%% - Deletion is tricky enough that the recursive structure of the
-%%%   original code is kept as-is.
+%%%   original code is kept as-is.  A local cache is used to avoid
+%%%   redundant I/Os.
 %%% - Our use cases only want sets, so this does not associate
 %%%   attributes with the keys.
 %%%
