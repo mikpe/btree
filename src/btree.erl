@@ -26,7 +26,8 @@
 %%%
 %%% - Initially based on [Wirth76].
 %%% - Converted from Pascal to C, and then to Erlang.  The Erlang
-%%%   version uses tuples in lieu of arrays.
+%%%   version uses tuples in lieu of arrays.  Pages are of variable
+%%%   not fixed size.
 %%% - I/O of pages is made explicit.
 %%% - Search is separated from insertion.  Search returns a stack of
 %%%   pages and indices recording the path from the root to the key.
