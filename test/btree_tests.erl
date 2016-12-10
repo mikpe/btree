@@ -41,7 +41,11 @@ insert_all(IO, Btree, Keys) ->
               Btree, Keys).
 
 insert_one(IO, Btree0, Key) ->
-  Btree = btree:insert(IO, Key, Btree0),
+  Btree =
+    case btree:insert(IO, Key, Btree0) of
+      ok -> Btree0;
+      {ok, Btree1} -> Btree1
+    end,
   ?assertEqual(true, btree:member(IO, Key, Btree)),
   ?assertEqual(ok, btree:check(IO, Btree)),
   Btree.
@@ -51,7 +55,11 @@ delete_all(IO, Btree, Keys) ->
               Btree, Keys).
 
 delete_one(IO, Btree0, Key) ->
-  Btree = btree:delete(IO, Key, Btree0),
+  Btree =
+    case btree:delete(IO, Key, Btree0) of
+      ok -> Btree0;
+      {ok, Btree1} -> Btree1
+    end,
   ?assertEqual(false, btree:member(IO, Key, Btree)),
   ?assertEqual(ok, btree:check(IO, Btree)),
   Btree.

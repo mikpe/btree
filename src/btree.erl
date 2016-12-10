@@ -76,6 +76,7 @@
 
 %% A page id is an integer > 0, or [].
 %% In references to pages, [] denotes an absent page.
+%% The root page is stored in the top-level #btree{}, and its page id is [].
 
 -define(NOPAGEID, []).
 -type pageid() :: pos_integer() | ?NOPAGEID.
@@ -100,13 +101,17 @@
 
 -record(btree,
         { order :: pos_integer() % aka N
-        , root :: pageid()
+        , root :: #page{}
         }).
 
 %%%_* Creating an empty B-tree =================================================
 
 new(N) when is_integer(N), N >= 2 ->
-  #btree{order = N, root = ?NOPAGEID}.
+  #btree{order = N,
+         root = #page{
+           pageid = ?NOPAGEID,
+           p0 = ?NOPAGEID,
+           e = {}}}.
 
 %%%_* Membership check =========================================================
 %%%
@@ -127,7 +132,7 @@ member(IO, X, #btree{root = A}) ->
 %%% If not found, return {false, Path}.
 
 search(IO, X, A) ->
-  search_pageid(IO, X, A, []).
+  search_page(IO, X, A, []).
 
 search_pageid(_IO, _X, ?NOPAGEID, Path) ->
   {false, Path};
@@ -167,7 +172,7 @@ binsearch(_E, _X, _L, R) ->
 %%%_* B-tree all_keys ==========================================================
 
 all_keys(IO, #btree{root = A}) ->
-  all_keys_pageid(IO, A, []).
+  all_keys_page(IO, A, []).
 
 all_keys_pageid(_IO, ?NOPAGEID, L) -> L;
 all_keys_pageid(IO, A, L) ->
@@ -188,41 +193,52 @@ insert(IO, X, Btree = #btree{order = N, root = Root}) ->
     {true, _P, _K, _Path} ->
       %% Nothing to do for sets.  For mappings, update the page if the
       %% key's attributes have changed.
-      Btree;
+      ok;
     {false, Path} ->
       U = #item{k = X, p = ?NOPAGEID},
-      case insert(IO, N, U, Path, Root) of
+      case insert(IO, N, ?NOPAGEID, U, Path) of
         false ->
-          Btree;
+          ok;
         NewRoot ->
-          Btree#btree{root = NewRoot}
+          {ok, Btree#btree{root = NewRoot}}
       end
   end.
 
-insert(IO, _N, U, [], Root) ->
-  ?dbg("insert(~p, ~p, ~p, ~p)~n", [_N,U,[],Root]),
-  PageId = page_allocate(IO),
-  Page = #page{pageid = PageId, p0 = Root, e = {U}},
-  page_write(IO, Page),
-  PageId;
-insert(IO, N, U, [{A, R} | Path], Root) ->
-  ?dbg("insert(~p, ~p, ~p, ~p)~n", [N,U,[{A,R}|Path],Root]),
+insert(_IO, _N, P0, U, []) ->
+  ?dbg("insert(~p, ~p, ~p, ~p)~n", [_N,P0,U,[]]),
+  #page{pageid = ?NOPAGEID, p0 = P0, e = {U}};
+insert(IO, N, _P0, U, [{A, R} | Path]) ->
+  ?dbg("insert(~p, ~p, ~p, ~p)~n", [N,U,_P0,[{A,R}|Path]]),
   E = A#page.e,
   if size(E) < 2 * N ->
+      %% Page A has room for U.
       E2 = erlang:insert_element(R + 1, E, U),
       A2 = A#page{e = E2},
-      page_write(IO, A2),
-      false;
+      case A2#page.pageid of
+        ?NOPAGEID ->
+          %% updating the root: return new version
+          A2;
+        _ ->
+          page_write(IO, A2),
+          false
+      end;
      true ->
       %% Page A is full; split it and continue with the emerging item V.
       {V, AE, BE} = split(N, U, E, R),
       ?dbg("split(~p, ~p, ~p, ~p)~n-> {~p, ~p, ~p}~n", [N,U,E,R,V,AE,BE]),
-      A2 = A#page{e = AE},
+      A2 =
+        case A#page.pageid of
+          ?NOPAGEID ->
+            %% splitting old root, allocate page for left half
+            A#page{e = AE, pageid = page_allocate(IO)};
+          _ ->
+            A#page{e = AE}
+        end,
       BPageId = page_allocate(IO),
       B = #page{pageid = BPageId, p0 = V#item.p, e = BE},
       page_write(IO, A2),
       page_write(IO, B),
-      insert(IO, N, V#item{p = BPageId}, Path, Root)
+      insert(IO, N, A2#page.pageid, V#item{p = BPageId}, Path)
   end.
 
 split(N, U, E, R) ->
@@ -249,25 +265,41 @@ split(N, U, E, R) ->
 %%% Deletion sometimes inspects and updates pages multiple times, so we use a
 %%% simple cache to avoid redundant I/O operations here.
 
-delete(IO, X, Btree) ->
-  Cache1 = mkcache(IO),
-  {Cache2, Btree2} = delete_1(Cache1, X, Btree),
+delete(IO, X, Btree = #btree{order = N, root = Root}) ->
+  Cache1 = mkcache(IO, Root),
+  Cache2 = delete_1(Cache1, X, N, Root),
+  State = cache_state(Cache2, Root#page.pageid),
   cache_flush(Cache2),
-  Btree2.
+  case State of
+    {_PageId, clean, _Root} -> ok;
+    {_PageId, dirty, NewRoot} -> {ok, Btree#btree{root = NewRoot}}
+  end.
 
-delete_1(Cache1, X, Btree = #btree{order = N, root = RootPageId}) ->
-  case delete(Cache1, N, X, RootPageId) of
+delete_1(Cache1, X, N, Root) ->
+  RootPageId = Root#page.pageid,
+  case delete(Cache1, N, X, RootPageId, Root) of
     {Cache2, true} ->
       %% base page size was reduced
       {Cache3, #page{p0 = P0, e = E}} = cache_read(Cache2, RootPageId),
       if size(E) =:= 0 ->
-          Cache4 = cache_delete(Cache3, RootPageId),
-          {Cache4, Btree#btree{root = P0}};
+          %% Wirth's original code would delete the old root page and
+          %% redirect the btree to P0.  We don't have a separate root
+          %% page so we can't do that.  Instead we copy the contents
+          %% of P0 into the root, and delete P0.
+          case P0 of
+            ?NOPAGEID ->
+              Cache3;
+            _ ->
+              {Cache4, A} = cache_read(Cache3, P0),
+              Cache5 = cache_write(Cache4, A#page{pageid = RootPageId}),
+              Cache6 = cache_delete(Cache5, P0),
+              Cache6
+          end;
          true ->
-          {Cache3, Btree}
+          Cache3
       end;
     {Cache2, false} ->
-      {Cache2, Btree}
+      Cache2
   end.
 
 %%% Search and delete key X in B-tree A; if a page underflow is
@@ -411,21 +443,13 @@ underflow(Cache1, N, CPageId, APageId, S) ->
 %%%
 %%% INV: There is at most one entry per PageId in the cache.
 
-%-define(NOCACHE, true).
--ifdef(NOCACHE).
-
-mkcache(IO)              -> IO.
-cache_flush(_IO)         -> ok.
-cache_read(IO, PageId)   -> {IO, page_read(IO, PageId)}.
-cache_write(IO, Page)    -> page_write(IO, Page), IO.
-cache_delete(IO, PageId) -> page_delete(IO, PageId), IO.
-
--else. % not NOCACHE
-
 -record(cache, {io, entries}).
 
-mkcache(IO) ->
-  #cache{io = IO, entries = []}.
+mkcache(IO, Root) ->
+  #cache{io = IO, entries = [{Root#page.pageid, clean, Root}]}.
+
+cache_state(#cache{entries = Entries}, PageId) ->
+  lists:keyfind(PageId, 1, Entries).
 
 cache_flush(#cache{io = IO, entries = Entries}) ->
   [case Entry of
@@ -454,8 +478,6 @@ cache_write(Cache = #cache{entries = Entries},
 cache_delete(Cache = #cache{entries = Entries}, PageId) ->
   NewEntries = lists:keystore(PageId, 1, Entries, {PageId, deleted}),
   Cache#cache{entries = NewEntries}.
-
--endif. % not NOCACHE
 
 %%%_* Page I/O =================================================================
 %%%
@@ -497,10 +519,11 @@ page_delete(#io{handle = Handle, delete = Delete}, PageId) ->
 check(IO, #btree{order = N, root = A}) ->
   LowerBound = false,
   IsRoot = true,
-  _LowerBound2 = check_pageid(IO, N, A, LowerBound, IsRoot),
+  _LowerBound2 = check_page(IO, N, A, LowerBound, IsRoot),
   ok.
 
-check_pageid(_IO, _N, ?NOPAGEID, LowerBound, _IsRoot) -> LowerBound;
+check_pageid(_IO, _N, ?NOPAGEID, LowerBound, _IsRoot) ->
+  LowerBound;
 check_pageid(IO, N, PageId, LowerBound, IsRoot) ->
   check_page(IO, N, page_read(IO, PageId), LowerBound, IsRoot).
 
@@ -526,7 +549,7 @@ check_key(K, {ok, LowerBound}) -> true = K > LowerBound.
 %%%_* Printing a B-tree (for debugging) ========================================
 
 print(IO, #btree{root = A}) ->
-  print_pageid(IO, A, 1).
+  print_page(IO, A, 1).
 
 print_pageid(_IO, ?NOPAGEID, _L) ->
   ok;

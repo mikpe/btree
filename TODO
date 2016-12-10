@@ -1,7 +1,3 @@
-* store data in top-level B-tree object without indirecting to root page;
-  helps keeping data for small embedded B-trees directly in enclosing objects;
-  insertion is easy to adjust, but not deletion; deletion in this case would
-  be helped by the cache
 * sometimes delete writes an empty E before deleting that page,
   is that a bug?
 * specialize search for membership test (avoid consing up the path)
