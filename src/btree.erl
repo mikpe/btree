@@ -74,13 +74,11 @@
 -define(dbg(Fmt, Args), ok).
 -endif.
 
-%% A page id is an integer > 0.
-%% In references to pages, [] denotes an absent page ([] has a smaller external
-%% representation than 0 or -1).
+%% A page id is an integer > 0, or [].
+%% In references to pages, [] denotes an absent page.
 
--type pageid() :: pos_integer().
 -define(NOPAGEID, []).
--type pageid_opt() :: pageid() | ?NOPAGEID.
+-type pageid() :: pos_integer() | ?NOPAGEID.
 
 %% An item is a pair of a key and a page reference.
 %% FIXME: drop tag to reduce storage
@@ -88,7 +86,7 @@
 
 -record(item,
         { k :: term()
-        , p :: pageid_opt() % subtree with keys k' > k
+        , p :: pageid() % subtree with keys k' > k
         }).
 
 %% A page is an array of m keys and m+1 page references, constrained
@@ -96,13 +94,13 @@
 
 -record(page, % m == size(e)
         { pageid :: pageid()
-        , p0 :: pageid_opt() % subtree with keys k' < (element(1, e))#item.k
+        , p0 :: pageid() % subtree with keys k' < (element(1, e))#item.k
         , e :: {#item{}}
         }).
 
 -record(btree,
         { order :: pos_integer() % aka N
-        , root :: pageid_opt()
+        , root :: pageid()
         }).
 
 %%%_* Creating an empty B-tree =================================================
@@ -129,12 +127,14 @@ member(IO, X, #btree{root = A}) ->
 %%% If not found, return {false, Path}.
 
 search(IO, X, A) ->
-  search(IO, X, A, []).
+  search_pageid(IO, X, A, []).
 
-search(_IO, _X, ?NOPAGEID, Path) ->
+search_pageid(_IO, _X, ?NOPAGEID, Path) ->
   {false, Path};
-search(IO, X, A, Path) ->
-  #page{p0 = P0, e = E} = P = page_read(IO, A),
+search_pageid(IO, X, A, Path) ->
+  search_page(IO, X, page_read(IO, A), Path).
+
+search_page(IO, X, P = #page{p0 = P0, e = E}, Path) ->
   case binsearch(E, X) of
     {found, K} ->
       {true, P, K, Path};
@@ -143,7 +143,7 @@ search(IO, X, A, Path) ->
         if R =:= 0 -> P0;
            true -> (element(R, E))#item.p
         end,
-      search(IO, X, Q, [{P, R} | Path])
+      search_pageid(IO, X, Q, [{P, R} | Path])
   end.
 
 %%%_* Binary search within a page ==============================================
@@ -167,17 +167,19 @@ binsearch(_E, _X, _L, R) ->
 %%%_* B-tree all_keys ==========================================================
 
 all_keys(IO, #btree{root = A}) ->
-  all_keys_page(IO, A, []).
+  all_keys_pageid(IO, A, []).
 
-all_keys_page(_IO, ?NOPAGEID, L) -> L;
-all_keys_page(IO, A, L) ->
-  #page{p0 = P0, e = E} = page_read(IO, A),
-  all_keys_elements(IO, E, 1, all_keys_page(IO, P0, L)).
+all_keys_pageid(_IO, ?NOPAGEID, L) -> L;
+all_keys_pageid(IO, A, L) ->
+  all_keys_page(IO, page_read(IO, A), L).
+
+all_keys_page(IO, #page{p0 = P0, e = E}, L) ->
+  all_keys_elements(IO, E, 1, all_keys_pageid(IO, P0, L)).
 
 all_keys_elements(_IO, E, I, L) when I > size(E) -> L;
 all_keys_elements(IO, E, I, L) ->
   #item{k = K, p = P} = element(I, E),
-  all_keys_elements(IO, E, I + 1, all_keys_page(IO, P, [K | L])).
+  all_keys_elements(IO, E, I + 1, all_keys_pageid(IO, P, [K | L])).
 
 %%%_* Insertion into a B-tree ==================================================
 
@@ -271,45 +273,46 @@ delete_1(Cache1, X, Btree = #btree{order = N, root = RootPageId}) ->
 %%% Search and delete key X in B-tree A; if a page underflow is
 %%% necessary, balance with adjacent page if possible, otherwise merge;
 %%% return true if page A becomes undersize.
+delete(_Cache, _N, _X, ?NOPAGEID) ->
+  ?dbg("delete(~p, ~p)~n", [_X, ?NOPAGEID]),
+  false;
 delete(Cache1, N, X, APageId) ->
-  if APageId =:= ?NOPAGEID ->
-      ?dbg("delete(~p, ~p)~n", [X, []]),
-      false;
-     true ->
-      {Cache2, A = #page{p0 = AP0, e = AE}} = cache_read(Cache1, APageId),
-      ?dbg("delete(~p, ~p)~n", [X, A]),
-      case binsearch(AE, X) of
-        {found, K} ->
-          %% found, now delete a^.e[k]
-          R = K - 1,
-          QPageId =
-            if R =:= 0 -> AP0;
-               true -> (element(R, AE))#item.p
-            end,
-          if QPageId =:= ?NOPAGEID ->
-              %% a is a terminal page
-              AE2 = erlang:delete_element(K, AE),
-              Cache3 = cache_write(Cache2, A#page{e = AE2}),
-              {Cache3, size(AE2) < N};
-             true ->
-              case del(Cache2, N, QPageId, APageId, K) of
-                {Cache3, true} ->
-                  underflow(Cache3, N, APageId, QPageId, R);
-                {Cache3, false} ->
-                  {Cache3, false}
-              end
-          end;
-        {not_found, R} ->
-          QPageId =
-            if R =:= 0 -> AP0;
-               true -> (element(R, AE))#item.p
-            end,
-          case delete(Cache2, N, X, QPageId) of
+  {Cache2, A} = cache_read(Cache1, APageId),
+  delete(Cache2, N, X, APageId, A).
+
+delete(Cache2, N, X, APageId, A = #page{p0 = AP0, e = AE}) ->
+  ?dbg("delete(~p, ~p)~n", [X, A]),
+  case binsearch(AE, X) of
+    {found, K} ->
+      %% found, now delete a^.e[k]
+      R = K - 1,
+      QPageId =
+        if R =:= 0 -> AP0;
+           true -> (element(R, AE))#item.p
+        end,
+      if QPageId =:= ?NOPAGEID ->
+          %% a is a terminal page
+          AE2 = erlang:delete_element(K, AE),
+          Cache3 = cache_write(Cache2, A#page{e = AE2}),
+          {Cache3, size(AE2) < N};
+         true ->
+          case del(Cache2, N, QPageId, APageId, K) of
             {Cache3, true} ->
               underflow(Cache3, N, APageId, QPageId, R);
             {Cache3, false} ->
               {Cache3, false}
           end
+      end;
+    {not_found, R} ->
+      QPageId =
+        if R =:= 0 -> AP0;
+           true -> (element(R, AE))#item.p
+        end,
+      case delete(Cache2, N, X, QPageId) of
+        {Cache3, true} ->
+          underflow(Cache3, N, APageId, QPageId, R);
+        {Cache3, false} ->
+          {Cache3, false}
       end
   end.
 
@@ -494,17 +497,19 @@ page_delete(#io{handle = Handle, delete = Delete}, PageId) ->
 check(IO, #btree{order = N, root = A}) ->
   LowerBound = false,
   IsRoot = true,
-  _LowerBound2 = check_page(IO, N, A, LowerBound, IsRoot),
+  _LowerBound2 = check_pageid(IO, N, A, LowerBound, IsRoot),
   ok.
 
-check_page(_IO, _N, ?NOPAGEID, LowerBound, _IsRoot) -> LowerBound;
-check_page(IO, N, PageId, LowerBound, IsRoot) ->
-  #page{p0 = P0, e = E} = page_read(IO, PageId),
+check_pageid(_IO, _N, ?NOPAGEID, LowerBound, _IsRoot) -> LowerBound;
+check_pageid(IO, N, PageId, LowerBound, IsRoot) ->
+  check_page(IO, N, page_read(IO, PageId), LowerBound, IsRoot).
+
+check_page(IO, N, #page{p0 = P0, e = E}, LowerBound, IsRoot) ->
   %% check page size
   true = size(E) =< 2 * N,
   true = IsRoot orelse size(E) >= N,
   %% check key order and subtrees
-  LowerBound2 = check_page(IO, N, P0, LowerBound, false),
+  LowerBound2 = check_pageid(IO, N, P0, LowerBound, false),
   check_elements(IO, N, E, 1, LowerBound2).
 
 check_elements(_IO, _N, E, I, LowerBound) when I > size(E) -> LowerBound;
@@ -512,7 +517,7 @@ check_elements(IO, N, E, I, LowerBound) ->
   #item{k = K, p = P} = element(I, E),
   check_key(K, LowerBound),
   LowerBound2 = {ok, K},
-  LowerBound3 = check_page(IO, N, P, LowerBound2, false),
+  LowerBound3 = check_pageid(IO, N, P, LowerBound2, false),
   check_elements(IO, N, E, I + 1, LowerBound3).
 
 check_key(_K, false) -> true;
@@ -521,17 +526,19 @@ check_key(K, {ok, LowerBound}) -> true = K > LowerBound.
 %%%_* Printing a B-tree (for debugging) ========================================
 
 print(IO, #btree{root = A}) ->
-  print(IO, A, 1).
+  print_pageid(IO, A, 1).
 
-print(_IO, ?NOPAGEID, _L) ->
+print_pageid(_IO, ?NOPAGEID, _L) ->
   ok;
-print(IO, PageId, L) ->
-  #page{p0 = P0, e = E} = page_read(IO, PageId),
+print_pageid(IO, PageId, L) ->
+  print_page(IO, page_read(IO, PageId), L).
+
+print_page(IO, #page{p0 = P0, e = E}, L) ->
   [io:format("     ") || _I <- lists:seq(1, L)],
   [io:format(" ~4w", [(element(I, E))#item.k]) || I <- lists:seq(1, size(E))],
   io:format("~n"),
-  print(IO, P0, L + 1),
-  [print(IO, (element(I, E))#item.p, L + 1) || I <- lists:seq(1, size(E))],
+  print_pageid(IO, P0, L + 1),
+  [print_pageid(IO, (element(I, E))#item.p, L + 1) || I <- lists:seq(1, size(E))],
   ok.
 
 %%%_* Emacs ====================================================================
