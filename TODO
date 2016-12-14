@@ -1,7 +1,6 @@
 * sometimes delete writes an empty E before deleting that page,
   is that a bug?
 * specialize search for membership test (avoid consing up the path)
-* add randomized testing (e.g. proper)
 * check if using maps instead of tuples would be beneficial:
   - check size of external representation
   - check cost of binary_to_term/term_to_binary of maps
