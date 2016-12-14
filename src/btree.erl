@@ -255,7 +255,7 @@ split(N, U, E, R) ->
       %% insert U in right page
       R2 = R - N,
       V = element(N + 1, E),
-      {AE, BE} = lists:split(N, tuple_to_list(E)),
+      {AE, [_V | BE]} = lists:split(N, tuple_to_list(E)),
       {BE1, BE2} = lists:split(R2 - 1, BE),
       {V, list_to_tuple(AE), list_to_tuple(BE1 ++ [U] ++ BE2)}
   end.
