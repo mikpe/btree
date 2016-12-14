@@ -305,9 +305,9 @@ delete_1(Cache1, X, N, Root) ->
 %%% Search and delete key X in B-tree A; if a page underflow is
 %%% necessary, balance with adjacent page if possible, otherwise merge;
 %%% return true if page A becomes undersize.
-delete(_Cache, _N, _X, ?NOPAGEID) ->
+delete(Cache, _N, _X, ?NOPAGEID) ->
   ?dbg("delete(~p, ~p)~n", [_X, ?NOPAGEID]),
-  false;
+  {Cache, false};
 delete(Cache1, N, X, APageId) ->
   {Cache2, A} = cache_read(Cache1, APageId),
   delete(Cache2, N, X, APageId, A).
