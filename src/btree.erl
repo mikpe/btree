@@ -89,14 +89,20 @@
         { k :: term()
         , p :: pageid() % subtree with keys k' > k
         }).
+-type item() :: #item{}.
+-define(item(K, P), #item{k = K, p = P}).
+item_p(#item{p = P}) -> P.
+item_k(#item{k = K}) -> K.
+item_set_p(U = #item{}, P) -> U#item{p = P}.
+item_set_k(U = #item{}, K) -> U#item{k = K}.
 
 %% A page is an array of m keys and m+1 page references, constrained
 %% by m =< 2N, and m >= N except for the root page.
 
 -record(page, % m == size(e)
         { pageid :: pageid()
-        , p0 :: pageid() % subtree with keys k' < (element(1, e))#item.k
-        , e :: {#item{}}
+        , p0 :: pageid() % subtree with keys k' < item_k(element(1, e))
+        , e :: {item()}
         }).
 
 -record(btree,
@@ -146,7 +152,7 @@ search_page(IO, X, P = #page{p0 = P0, e = E}, Path) ->
     {not_found, R} ->
       Q =
         if R =:= 0 -> P0;
-           true -> (element(R, E))#item.p
+           true -> item_p(element(R, E))
         end,
       search_pageid(IO, X, Q, [{P, R} | Path])
   end.
@@ -161,7 +167,7 @@ binsearch(E, X) ->
   binsearch(E, X, 1, size(E)).
 binsearch(E, X, L, R) when R >= L ->
   K = (L + R) div 2,
-  KX = (element(K, E))#item.k,
+  KX = item_k(element(K, E)),
   if X < KX -> binsearch(E, X, L, K - 1);
      X =:= KX -> {found, K};
      true -> binsearch(E, X, K + 1, R)
@@ -183,7 +189,7 @@ all_keys_page(IO, #page{p0 = P0, e = E}, L) ->
 
 all_keys_elements(_IO, E, I, L) when I > size(E) -> L;
 all_keys_elements(IO, E, I, L) ->
-  #item{k = K, p = P} = element(I, E),
+  ?item(K, P) = element(I, E),
   all_keys_elements(IO, E, I + 1, all_keys_pageid(IO, P, [K | L])).
 
 %%%_* Insertion into a B-tree ==================================================
@@ -195,7 +201,7 @@ insert(IO, X, Btree = #btree{order = N, root = Root}) ->
       %% key's attributes have changed.
       ok;
     {false, Path} ->
-      U = #item{k = X, p = ?NOPAGEID},
+      U = ?item(X, ?NOPAGEID),
       case insert(IO, N, ?NOPAGEID, U, Path) of
         false ->
           ok;
@@ -235,10 +241,10 @@ insert(IO, N, _P0, U, [{A, R} | Path]) ->
             A#page{e = AE}
         end,
       BPageId = page_allocate(IO),
-      B = #page{pageid = BPageId, p0 = V#item.p, e = BE},
+      B = #page{pageid = BPageId, p0 = item_p(V), e = BE},
       page_write(IO, A2),
       page_write(IO, B),
-      insert(IO, N, A2#page.pageid, V#item{p = BPageId}, Path)
+      insert(IO, N, A2#page.pageid, item_set_p(V, BPageId), Path)
   end.
 
 split(N, U, E, R) ->
@@ -320,7 +326,7 @@ delete(Cache2, N, X, APageId, A = #page{p0 = AP0, e = AE}) ->
       R = K - 1,
       QPageId =
         if R =:= 0 -> AP0;
-           true -> (element(R, AE))#item.p
+           true -> item_p(element(R, AE))
         end,
       if QPageId =:= ?NOPAGEID ->
           %% a is a terminal page
@@ -338,7 +344,7 @@ delete(Cache2, N, X, APageId, A = #page{p0 = AP0, e = AE}) ->
     {not_found, R} ->
       QPageId =
         if R =:= 0 -> AP0;
-           true -> (element(R, AE))#item.p
+           true -> item_p(element(R, AE))
         end,
       case delete(Cache2, N, X, QPageId) of
         {Cache3, true} ->
@@ -352,7 +358,7 @@ del(Cache1, N, PPageId, APageId, K) ->
   {Cache2, P = #page{e = PE}} = cache_read(Cache1, PPageId),
   ?dbg("del(~p, ~p, ~p)~n", [P, APageId, K]),
   PEM = element(size(PE), PE),
-  QPageId = PEM#item.p,
+  QPageId = item_p(PEM),
   if QPageId =/= ?NOPAGEID ->
       case del(Cache2, N, QPageId, APageId, K) of
         {Cache3, true} ->
@@ -363,7 +369,7 @@ del(Cache1, N, PPageId, APageId, K) ->
      true ->
       {Cache3, A = #page{e = AE}} = cache_read(Cache2, APageId),
       %% Wirth's code appears to perform several reundant assignments in this case.
-      AE2 = setelement(K, AE, (element(K, AE))#item{k = PEM#item.k}),
+      AE2 = setelement(K, AE, item_set_k(element(K, AE), item_k(PEM))),
       PE2 = erlang:delete_element(size(PE), PE),
       Cache4 = cache_write(Cache3, A#page{e = AE2}),
       Cache5 = cache_write(Cache4, P#page{e = PE2}),
@@ -380,18 +386,18 @@ underflow(Cache1, N, CPageId, APageId, S) ->
   if S < size(CE) ->
       %% b = page to the right of a
       S1 = S + 1,
-      BPageId = (element(S1, CE))#item.p,
+      BPageId = item_p(element(S1, CE)),
       {Cache4, B = #page{p0 = BP0, e = BE}} = cache_read(Cache3, BPageId),
       MB = size(BE),
       K = (MB - N + 1) div 2,
       %% k = no. of items available on adjacent page b
-      U = #item{k = (element(S1, CE))#item.k, p = BP0},
+      U = ?item(item_k(element(S1, CE)), BP0),
       if K > 0 ->
           %% move k items from b to a
           %% (actually only k-1 items, 1 is moved to c)
-          {BE1, [#item{k = BEKk, p = BEKp} | BE2]} = lists:split(K - 1, tuple_to_list(BE)),
+          {BE1, [?item(BEKk, BEKp) | BE2]} = lists:split(K - 1, tuple_to_list(BE)),
           AE2 = list_to_tuple(tuple_to_list(AE) ++ [U] ++ BE1),
-          CE2 = setelement(S1, CE, #item{k = BEKk, p = BPageId}),
+          CE2 = setelement(S1, CE, ?item(BEKk, BPageId)),
           Cache5 = cache_write(Cache4, A#page{e = AE2}),
           Cache6 = cache_write(Cache5, C#page{e = CE2}),
           Cache7 = cache_write(Cache6, B#page{p0 = BEKp, e = list_to_tuple(BE2)}),
@@ -409,25 +415,25 @@ underflow(Cache1, N, CPageId, APageId, S) ->
       %% b = page to the left of a
       BPageId =
         if S =:= 1 -> CP0;
-           true -> (element(S - 1, CE))#item.p
+           true -> item_p(element(S - 1, CE))
         end,
       {Cache4, B = #page{e = BE}} = cache_read(Cache3, BPageId),
       MB = size(BE) + 1,
       K = (MB - N) div 2,
       if K > 0 ->
           %% move k items from page b to a
-          U = #item{k = (element(S, CE))#item.k, p = AP0},
+          U = ?item(item_k(element(S, CE)), AP0),
           MB2 = MB - K,
-          {BE1, [#item{k = BEBM2k, p = BEMB2p} | BE2]} = lists:split(MB2 - 1, tuple_to_list(BE)),
+          {BE1, [?item(BEMB2k, BEMB2p) | BE2]} = lists:split(MB2 - 1, tuple_to_list(BE)),
           AE2 = list_to_tuple(BE2 ++ [U] ++ tuple_to_list(AE)),
-          CE2 = setelement(S, CE, #item{k = BEBM2k, p = APageId}),
+          CE2 = setelement(S, CE, ?item(BEMB2k, APageId)),
           Cache5 = cache_write(Cache4, A#page{p0 = BEMB2p, e = AE2}),
           Cache6 = cache_write(Cache5, B#page{e = list_to_tuple(BE1)}),
           Cache7 = cache_write(Cache6, C#page{e = CE2}),
           {Cache7, false};
          true ->
           %% merge pages a and b
-          U = #item{k = (element(S, CE))#item.k, p = AP0},
+          U = ?item(item_k(element(S, CE)), AP0),
           BE2 = list_to_tuple(tuple_to_list(BE) ++ [U] ++ tuple_to_list(AE)),
           Cache5 = cache_write(Cache4, B#page{e = BE2}),
           Cache6 = cache_write(Cache5, C#page{e = erlang:delete_element(S, CE)}),
@@ -537,7 +543,7 @@ check_page(IO, N, #page{p0 = P0, e = E}, LowerBound, IsRoot) ->
 
 check_elements(_IO, _N, E, I, LowerBound) when I > size(E) -> LowerBound;
 check_elements(IO, N, E, I, LowerBound) ->
-  #item{k = K, p = P} = element(I, E),
+  ?item(K, P) = element(I, E),
   check_key(K, LowerBound),
   LowerBound2 = {ok, K},
   LowerBound3 = check_pageid(IO, N, P, LowerBound2, false),
@@ -558,10 +564,10 @@ print_pageid(IO, PageId, L) ->
 
 print_page(IO, #page{p0 = P0, e = E}, L) ->
   [io:format("     ") || _I <- lists:seq(1, L)],
-  [io:format(" ~4w", [(element(I, E))#item.k]) || I <- lists:seq(1, size(E))],
+  [io:format(" ~4w", [item_k(element(I, E))]) || I <- lists:seq(1, size(E))],
   io:format("~n"),
   print_pageid(IO, P0, L + 1),
-  [print_pageid(IO, (element(I, E))#item.p, L + 1) || I <- lists:seq(1, size(E))],
+  [print_pageid(IO, item_p(element(I, E)), L + 1) || I <- lists:seq(1, size(E))],
   ok.
 
 %%%_* Emacs ====================================================================
