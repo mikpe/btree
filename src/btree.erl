@@ -82,19 +82,15 @@
 -type pageid() :: pos_integer() | ?NOPAGEID.
 
 %% An item is a pair of a key and a page reference.
-%% FIXME: drop tag to reduce storage
 %% FIXME: inline as 2 consecutive elements in the page's E vector
 
--record(item,
-        { k :: term()
-        , p :: pageid() % subtree with keys k' > k
-        }).
--type item() :: #item{}.
--define(item(K, P), #item{k = K, p = P}).
-item_p(#item{p = P}) -> P.
-item_k(#item{k = K}) -> K.
-item_set_p(U = #item{}, P) -> U#item{p = P}.
-item_set_k(U = #item{}, K) -> U#item{k = K}.
+-type item() :: {K :: term(),
+                 P :: pageid()}. % subtree with keys K' > K
+-define(item(K, P), {K, P}).
+item_p({_K, P}) -> P.
+item_k({K, _P}) -> K.
+item_set_p({K, _P}, P) -> {K, P}.
+item_set_k({_K, P}, K) -> {K, P}.
 
 %% A page is an array of m keys and m+1 page references, constrained
 %% by m =< 2N, and m >= N except for the root page.
