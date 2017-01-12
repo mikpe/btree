@@ -117,7 +117,7 @@ new(N) when is_integer(N), N >= 2 ->
 
 %%%_* Membership check =========================================================
 %%%
-%%% Check if a key is present in a B-tree.  Return true if it is, false otherwise.
+%%% Return true if a key is present in a B-tree, false otherwise.
 
 member(IO, X, #btree{root = A}) ->
   case search(IO, X, A) of
@@ -364,7 +364,7 @@ del(Cache1, N, PPageId, APageId, K) ->
       end;
      true ->
       {Cache3, A = #page{e = AE}} = cache_read(Cache2, APageId),
-      %% Wirth's code appears to perform several reundant assignments in this case.
+      %% Wirth's code does several redundant assignments in this case.
       AE2 = setelement(K, AE, item_set_k(element(K, AE), item_k(PEM))),
       PE2 = erlang:delete_element(size(PE), PE),
       Cache4 = cache_write(Cache3, A#page{e = AE2}),
@@ -391,12 +391,14 @@ underflow(Cache1, N, CPageId, APageId, S) ->
       if K > 0 ->
           %% move k items from b to a
           %% (actually only k-1 items, 1 is moved to c)
-          {BE1, [?item(BEKk, BEKp) | BE2]} = lists:split(K - 1, tuple_to_list(BE)),
+          {BE1, [?item(BEKk, BEKp) | BE2]} =
+            lists:split(K - 1, tuple_to_list(BE)),
           AE2 = list_to_tuple(tuple_to_list(AE) ++ [U] ++ BE1),
           CE2 = setelement(S1, CE, ?item(BEKk, BPageId)),
           Cache5 = cache_write(Cache4, A#page{e = AE2}),
           Cache6 = cache_write(Cache5, C#page{e = CE2}),
-          Cache7 = cache_write(Cache6, B#page{p0 = BEKp, e = list_to_tuple(BE2)}),
+          Cache7 =
+            cache_write(Cache6, B#page{p0 = BEKp, e = list_to_tuple(BE2)}),
           {Cache7, false};
          true ->
           %% merge pages a and b
@@ -420,7 +422,8 @@ underflow(Cache1, N, CPageId, APageId, S) ->
           %% move k items from page b to a
           U = ?item(item_k(element(S, CE)), AP0),
           MB2 = MB - K,
-          {BE1, [?item(BEMB2k, BEMB2p) | BE2]} = lists:split(MB2 - 1, tuple_to_list(BE)),
+          {BE1, [?item(BEMB2k, BEMB2p) | BE2]}
+            = lists:split(MB2 - 1, tuple_to_list(BE)),
           AE2 = list_to_tuple(BE2 ++ [U] ++ tuple_to_list(AE)),
           CE2 = setelement(S, CE, ?item(BEMB2k, APageId)),
           Cache5 = cache_write(Cache4, A#page{p0 = BEMB2p, e = AE2}),
@@ -432,7 +435,8 @@ underflow(Cache1, N, CPageId, APageId, S) ->
           U = ?item(item_k(element(S, CE)), AP0),
           BE2 = list_to_tuple(tuple_to_list(BE) ++ [U] ++ tuple_to_list(AE)),
           Cache5 = cache_write(Cache4, B#page{e = BE2}),
-          Cache6 = cache_write(Cache5, C#page{e = erlang:delete_element(S, CE)}),
+          Cache6 =
+            cache_write(Cache5, C#page{e = erlang:delete_element(S, CE)}),
           Cache7 = cache_delete(Cache6, APageId),
           {Cache7, (S - 1) < N}
       end
@@ -563,7 +567,8 @@ print_page(IO, #page{p0 = P0, e = E}, L) ->
   [io:format(" ~4w", [item_k(element(I, E))]) || I <- lists:seq(1, size(E))],
   io:format("~n"),
   print_pageid(IO, P0, L + 1),
-  [print_pageid(IO, item_p(element(I, E)), L + 1) || I <- lists:seq(1, size(E))],
+  [print_pageid(IO, item_p(element(I, E)), L + 1)
+   || I <- lists:seq(1, size(E))],
   ok.
 
 %%%_* Emacs ====================================================================

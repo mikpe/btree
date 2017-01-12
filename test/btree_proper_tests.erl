@@ -60,7 +60,8 @@ prop_seq() ->
   ?FORALL(Cmds, proper_statem:commands(?MODULE),
           begin
             setup(),
-            {History, State, Result} = proper_statem:run_commands(?MODULE, Cmds),
+            {History, State, Result} =
+              proper_statem:run_commands(?MODULE, Cmds),
             cleanup(),
             ?WHENFAIL(
                io:fwrite("History: ~w~n"
@@ -88,13 +89,15 @@ key() ->
 precondition(_St, _Cmd) ->
   true.
 
-postcondition(#st{set = Set}, {call, ?MODULE, member, [Key]}, {_IO, _Btree, Result}) ->
+postcondition(#st{set = Set}, {call, ?MODULE, member, [Key]},
+              {_IO, _Btree, Result}) ->
   sets:is_element(Key, Set) =:= Result;
 postcondition(_St, {call, ?MODULE, insert, [Key]}, {IO, Btree}) ->
   valid(IO, Btree) andalso btree:member(IO, Key, Btree);
 postcondition(_St, {call, ?MODULE, delete, [Key]}, {IO, Btree}) ->
   valid(IO, Btree) andalso not btree:member(IO, Key, Btree);
-postcondition(#st{set = Set}, {call, ?MODULE, all_keys, []}, {_IO, _Btree, Result}) ->
+postcondition(#st{set = Set}, {call, ?MODULE, all_keys, []},
+              {_IO, _Btree, Result}) ->
   lists:sort(sets:to_list(Set)) =:= lists:sort(Result).
 
 valid(IO, Btree) ->
