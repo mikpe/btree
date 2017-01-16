@@ -4,7 +4,7 @@
 %%% Author      : Mikael Pettersson <mikael.pettersson@klarna.com>
 %%% Description : Erlang implementation of B-tree sets
 %%%
-%%% Copyright (c) 2016 Klarna AB
+%%% Copyright (c) 2016-2017 Klarna AB
 %%%
 %%% This file is provided to you under the Apache License,
 %%% Version 2.0 (the "License"); you may not use this file
@@ -65,6 +65,8 @@
 
 -export([check/2, print/2]). % for debugging only
 
+-export_type([btree/1]).
+
 %%%_* Types and macros =========================================================
 
 %-define(DEBUG, true).
@@ -105,6 +107,10 @@ item_set_k({_K, P}, K) -> {K, P}.
         { order :: pos_integer() % aka N
         , root :: #page{}
         }).
+
+-type item(T) :: {K :: T, P :: pageid()}.
+-type page(T) :: #page{e :: {item(T)}}.
+-type btree(T) :: #btree{root :: page(T)}.
 
 %%%_* Creating an empty B-tree =================================================
 
