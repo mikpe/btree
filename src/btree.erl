@@ -37,6 +37,7 @@
 %%%   redundant I/Os.
 %%% - Our use cases only want sets, so this does not associate
 %%%   attributes with the keys.
+%%% - Bulk-loading into an empty tree has been added.
 %%%
 %%%----------------------------------------------------------------
 %%%
@@ -56,6 +57,7 @@
 
 -module(btree).
 -export([ new/1
+        , from_list/3
         , member/3
         , all_keys/2
         , insert/3
@@ -120,6 +122,95 @@ new(N) when is_integer(N), N >= 2 ->
            pageid = ?NOPAGEID,
            p0 = ?NOPAGEID,
            e = {}}}.
+
+%%%_* Bulk-loading a list into an empty B-tree =================================
+%%% Citing from Wikipedia's article on B-trees, section "Initial construction":
+%%%
+%%% "In applications, it is frequently useful to build a B-tree to represent a
+%%% large existing collection of data and then update it incrementally using
+%%% standard B-tree operations. In this case, the most efficient way to construct
+%%% the initial B-tree is not to insert every element in the initial collection
+%%% successively, but instead to construct the initial set of leaf nodes directly
+%%% from the input, then build the internal nodes from these. This approach to
+%%% B-tree construction is called bulkloading. Initially, every leaf but the last
+%%% one has one extra element, which will be used to build the internal nodes.
+%%% We build the next level up from the leaves by taking the last element from
+%%% each leaf node except the last one. Again, each node except the last will
+%%% contain one extra value. This process is continued until we reach a level
+%%% with only one node and it is not overfilled."
+
+-record(item,
+        { left % :: #node{} | []
+        , key :: term()
+        }).
+-record(node,  {e :: [#item{}], right :: #node{} | []}).
+-record(xnode, {e :: [#item{}], xtra :: #item{}}).
+
+from_list(IO, N, Keys) when is_integer(N), N >= 2 ->
+  to_root(IO, N, make_tree(N, make_leaves(N, lists:sort(Keys)))).
+
+%% Pass 1: Reduce the list of keys to a left-centric tree.  (Items have a "left"
+%% reference to subtree with smaller keys, nodes have a "right" reference to
+%% subtree with keys larger than the largest key in the node.)
+
+make_leaves(N, Keys) -> % -> {[#xnode{}], #node{}}
+  make_xnodes(Keys, fun key_to_item/1, [], length(Keys), N, []).
+
+make_tree(N, {XNodes, LastNode}) -> % -> #node{}
+  Length = length(XNodes),
+  if Length > N*2 ->
+      make_tree(N, make_xnodes(XNodes, fun xnode_to_item/1, LastNode, Length, N, []));
+     true ->
+      E = [xnode_to_item(XNode) || XNode <- XNodes],
+      make_node(E, LastNode)
+  end.
+
+make_xnodes(Things, ThingToItem, LastNode, Length, N, Acc) -> % -> {[#xnode{}], #node{}}
+  if Length > N*2 ->
+      {Left, [Xtra | Right]} = lists:split(N*2, Things),
+      E = [ThingToItem(Thing) || Thing <- Left],
+      X = ThingToItem(Xtra),
+      make_xnodes(Right, ThingToItem, LastNode, Length - (N*2 + 1), N,
+                  [#xnode{e = E, xtra = X} | Acc]);
+     true ->
+      E = [ThingToItem(Thing) || Thing <- Things],
+      {lists:reverse(Acc), make_node(E, LastNode)}
+  end.
+
+key_to_item(Key) -> #item{left = [], key = Key}.
+
+xnode_to_item(#xnode{e = E, xtra = #item{left = Left, key = Key}}) ->
+  #item{left = make_node(E, Left), key = Key}.
+
+make_node(_E = [], Right) -> Right;
+make_node(E, Right) -> #node{e = E, right = Right}.
+
+%% Pass 2: Map the left-centric tree to a right-centric B-tree, and output it.
+
+to_root(_IO, N, []) ->
+  new(N);
+to_root(IO, N, #node{e = E, right = R}) ->
+  #btree{order = N, root = to_page(IO, ?NOPAGEID, E, R)}.
+
+to_page(IO, PageId, [#item{left = L, key = K} | E], R) ->
+  P0 = to_pageid(IO, L),
+  to_page(IO, PageId, P0, K, E, R, []).
+
+to_page(IO, PageId, P0, K, [#item{left = L, key = K1} | E], R, Acc) ->
+  Item = ?item(K, to_pageid(IO, L)),
+  to_page(IO, PageId, P0, K1, E, R, [Item | Acc]);
+to_page(IO, PageId, P0, K, [], R, Acc) ->
+  Item = ?item(K, to_pageid(IO, R)),
+  E = list_to_tuple(lists:reverse([Item | Acc])),
+  #page{pageid = PageId, p0 = P0, e = E}.
+
+to_pageid(_IO, []) ->
+  ?NOPAGEID;
+to_pageid(IO, #node{e = E, right = R}) ->
+  PageId = page_allocate(IO),
+  Page = to_page(IO, PageId, E, R),
+  page_write(IO, Page),
+  PageId.
 
 %%%_* Membership check =========================================================
 %%%
