@@ -618,33 +618,37 @@ page_delete(#io{handle = Handle, delete = Delete}, PageId) ->
   ok = Delete(Handle, PageId).
 
 %%%_* Checking a B-tree (for debugging) ========================================
+%%% Normally we'd only permit the root node to be underfilled, but bulk-looading
+%%% tends to leave the right-most nodes underfilled, so we permit that too.
 
 check(IO, #btree{order = N, root = A}) ->
   LowerBound = false,
-  IsRoot = true,
-  _LowerBound2 = check_page(IO, N, A, LowerBound, IsRoot),
+  PermitUnderfill = true,
+  _LowerBound2 = check_page(IO, N, A, LowerBound, PermitUnderfill),
   ok.
 
-check_pageid(_IO, _N, ?NOPAGEID, LowerBound, _IsRoot) ->
+check_pageid(_IO, _N, ?NOPAGEID, LowerBound, _PermitUnderfill) ->
   LowerBound;
-check_pageid(IO, N, PageId, LowerBound, IsRoot) ->
-  check_page(IO, N, page_read(IO, PageId), LowerBound, IsRoot).
+check_pageid(IO, N, PageId, LowerBound, PermitUnderfill) ->
+  check_page(IO, N, page_read(IO, PageId), LowerBound, PermitUnderfill).
 
-check_page(IO, N, #page{p0 = P0, e = E}, LowerBound, IsRoot) ->
+check_page(IO, N, #page{p0 = P0, e = E}, LowerBound, PermitUnderfill) ->
   %% check page size
   true = size(E) =< 2 * N,
-  true = IsRoot orelse size(E) >= N,
+  true = PermitUnderfill orelse size(E) >= N,
   %% check key order and subtrees
   LowerBound2 = check_pageid(IO, N, P0, LowerBound, false),
-  check_elements(IO, N, E, 1, LowerBound2).
+  check_elements(IO, N, E, 1, LowerBound2, PermitUnderfill).
 
-check_elements(_IO, _N, E, I, LowerBound) when I > size(E) -> LowerBound;
-check_elements(IO, N, E, I, LowerBound) ->
+check_elements(_IO, _N, E, I, LowerBound, _PermitUnderfill) when I > size(E) ->
+  LowerBound;
+check_elements(IO, N, E, I, LowerBound, PermitUnderfill) ->
   ?item(K, P) = element(I, E),
   check_key(K, LowerBound),
   LowerBound2 = {ok, K},
-  LowerBound3 = check_pageid(IO, N, P, LowerBound2, false),
-  check_elements(IO, N, E, I + 1, LowerBound3).
+  PermitUnderfill2 = PermitUnderfill andalso I =:= size(E),
+  LowerBound3 = check_pageid(IO, N, P, LowerBound2, PermitUnderfill2),
+  check_elements(IO, N, E, I + 1, LowerBound3, PermitUnderfill).
 
 check_key(_K, false) -> true;
 check_key(K, {ok, LowerBound}) -> true = K > LowerBound.
