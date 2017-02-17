@@ -128,16 +128,16 @@ new(N) when is_integer(N), N >= 2 ->
 %%%
 %%% "In applications, it is frequently useful to build a B-tree to represent a
 %%% large existing collection of data and then update it incrementally using
-%%% standard B-tree operations. In this case, the most efficient way to construct
-%%% the initial B-tree is not to insert every element in the initial collection
-%%% successively, but instead to construct the initial set of leaf nodes directly
-%%% from the input, then build the internal nodes from these. This approach to
-%%% B-tree construction is called bulkloading. Initially, every leaf but the last
-%%% one has one extra element, which will be used to build the internal nodes.
-%%% We build the next level up from the leaves by taking the last element from
-%%% each leaf node except the last one. Again, each node except the last will
-%%% contain one extra value. This process is continued until we reach a level
-%%% with only one node and it is not overfilled."
+%%% standard B-tree operations. In this case, the most efficient way to
+%%% construct the initial B-tree is not to insert every element in the initial
+%%% collection successively, but instead to construct the initial set of leaf
+%%% nodes directly from the input, then build the internal nodes from these.
+%%% This approach to B-tree construction is called bulkloading. Initially, every
+%%% leaf but the last one has one extra element, which will be used to build the
+%%% internal nodes. We build the next level up from the leaves by taking the
+%%% last element from each leaf node except the last one. Again, each node
+%%% except the last will contain one extra value. This process is continued
+%%% until we reach a level with only one node and it is not overfilled."
 
 -record(item,
         { left % :: #node{} | []
@@ -159,13 +159,15 @@ make_leaves(N, Keys) -> % -> {[#xnode{}], #node{}}
 make_tree(N, {XNodes, LastNode}) -> % -> #node{}
   Length = length(XNodes),
   if Length > N*2 ->
-      make_tree(N, make_xnodes(XNodes, fun xnode_to_item/1, LastNode, Length, N, []));
+      make_tree(N, make_xnodes(XNodes, fun xnode_to_item/1, LastNode, Length,
+                               N, []));
      true ->
       E = [xnode_to_item(XNode) || XNode <- XNodes],
       make_node(E, LastNode)
   end.
 
-make_xnodes(Things, ThingToItem, LastNode, Length, N, Acc) -> % -> {[#xnode{}], #node{}}
+%% -> {[#xnode{}], #node{}}
+make_xnodes(Things, ThingToItem, LastNode, Length, N, Acc) ->
   if Length > N*2 ->
       {Left, [Xtra | Right]} = lists:split(N*2, Things),
       E = [ThingToItem(Thing) || Thing <- Left],
