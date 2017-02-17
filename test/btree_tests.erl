@@ -1,9 +1,10 @@
 %%%----------------------------------------------------------------
+%%%
 %%% File        : btree_tests.erl
 %%% Author      : Mikael Pettersson <mikael.pettersson@klarna.com>
 %%% Description : Tests for Erlang implementation of B-tree sets
 %%%
-%%% Copyright (c) 2016 Klarna AB
+%%% Copyright (c) 2016-2017 Klarna AB
 %%%
 %%% This file is provided to you under the Apache License,
 %%% Version 2.0 (the "License"); you may not use this file
@@ -18,6 +19,7 @@
 %%% KIND, either express or implied.  See the License for the
 %%% specific language governing permissions and limitations
 %%% under the License.
+%%%
 %%%----------------------------------------------------------------
 
 -module(btree_tests).
@@ -28,13 +30,16 @@
 %% Exercise an order-2 B-tree using a sequence of insertions and deletions
 %% taken from [Wirth76].
 wirth_test() ->
-  Keys = [20, 40, 10, 30, 15, 35, 7, 26, 18, 22, 5, 42, 13, 46, 27, 8, 32,
-          38, 24, 45, 25],
+  Keys = wirth_keys(),
   {ETS, IO} = io_init(),
   Btree1 = insert_all(IO, btree:new(2), Keys),
   Btree2 = delete_all(IO, Btree1, lists:reverse(Keys)),
   ?assertEqual([], btree:all_keys(IO, Btree2)),
   io_fini(ETS).
+
+wirth_keys() ->
+  [20, 40, 10, 30, 15, 35, 7, 26, 18, 22, 5, 42, 13, 46, 27, 8, 32,
+   38, 24, 45, 25].
 
 insert_all(IO, Btree, Keys) ->
   lists:foldl(fun (Key, Btree1) -> insert_one(IO, Btree1, Key) end,
@@ -63,6 +68,16 @@ delete_one(IO, Btree0, Key) ->
   ?assertEqual(false, btree:member(IO, Key, Btree)),
   ?assertEqual(ok, btree:check(IO, Btree)),
   Btree.
+
+%% Test bulk-loading into an order-2 B-tree.
+bulk_test() ->
+  Keys = wirth_keys(),
+  {ETS, IO} = io_init(),
+  Btree = btree:from_list(IO, 2, Keys),
+  ?assertEqual(ok, btree:check(IO, Btree)),
+  SortedKeys = lists:sort(Keys),
+  ?assertEqual(SortedKeys, lists:sort(btree:all_keys(IO, Btree))),
+  io_fini(ETS).
 
 %% Use an ETS table to simulate secondary storage.
 
