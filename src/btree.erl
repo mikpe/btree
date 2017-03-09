@@ -86,7 +86,7 @@
 -type pageid() :: pos_integer() | ?NOPAGEID.
 
 %% An item is a pair of a key and a page reference.
-%% FIXME: inline as 2 consecutive elements in the page's E vector
+%% TODO: inline as 2 consecutive elements in the page's E vector?
 
 -type item() :: {K :: term(),
                  P :: pageid()}. % subtree with keys K' > K
@@ -124,6 +124,7 @@ new(N) when is_integer(N), N >= 2 ->
            e = {}}}.
 
 %%%_* Bulk-loading a list into an empty B-tree =================================
+%%%
 %%% Citing from Wikipedia's article on B-trees, section "Initial construction":
 %%%
 %%% "In applications, it is frequently useful to build a B-tree to represent a
@@ -403,9 +404,9 @@ delete_1(Cache1, X, N, Root) ->
       Cache2
   end.
 
-%%% Search and delete key X in B-tree A; if a page underflow is
-%%% necessary, balance with adjacent page if possible, otherwise merge;
-%%% return true if page A becomes undersize.
+%% Search and delete key X in B-tree A; if a page underflow is
+%% necessary, balance with adjacent page if possible, otherwise merge;
+%% return true if page A becomes undersize.
 delete(Cache, _N, _X, ?NOPAGEID) ->
   ?dbg("delete(~p, ~p)~n", [_X, ?NOPAGEID]),
   {Cache, false};
@@ -620,7 +621,8 @@ page_delete(#io{handle = Handle, delete = Delete}, PageId) ->
   ok = Delete(Handle, PageId).
 
 %%%_* Checking a B-tree (for debugging) ========================================
-%%% Normally we'd only permit the root node to be underfilled, but bulk-looading
+%%%
+%%% Normally we'd only permit the root node to be underfilled, but bulk-loading
 %%% tends to leave the right-most nodes underfilled, so we permit that too.
 
 check(IO, #btree{order = N, root = A}) ->
