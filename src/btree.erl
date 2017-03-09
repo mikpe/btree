@@ -147,7 +147,7 @@ new(N) when is_integer(N), N >= 2 ->
 -record(xnode, {e :: [#item{}], xtra :: #item{}}).
 
 from_list(IO, N, Keys) when is_integer(N), N >= 2 ->
-  to_root(IO, N, make_tree(N, make_leaves(N, lists:sort(Keys)))).
+  to_root(IO, N, make_tree(N, make_leaves(N, lists:usort(Keys)))).
 
 %% Pass 1: Reduce the list of keys to a left-centric tree.  (Items have a "left"
 %% reference to subtree with smaller keys, nodes have a "right" reference to
