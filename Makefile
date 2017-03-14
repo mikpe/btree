@@ -1,23 +1,24 @@
 suite=$(if $(SUITE), suite=$(SUITE), )
 
-.PHONY: all deps check test clean
+.PHONY: all compile deps test check docs clean
 
-all: deps
+all: compile deps test check docs
+
+compile:
 	./rebar compile
 
 deps:
 	./rebar get-deps
 
-docs:
-	./rebar doc
+test:
+	./rebar eunit $(suite) skip_deps=true
 
 check:
 	./rebar check-plt
 	./rebar dialyze
 
-test:
-	./rebar eunit $(suite) skip_deps=true
-
+docs:
+	./rebar doc
 
 conf_clean:
 	@:
