@@ -1,23 +1,31 @@
 suite=$(if $(SUITE), suite=$(SUITE), )
 
-.PHONY: all deps check test clean
+DIALYZER_OPTIONS := --fullpath --no_native -Wunderspecs
+DIALYZER_PLT     := ./dialyzer.plt
 
-all: deps
+.PHONY: default all get-deps compile deps test dialyze docs clean
+
+default: compile
+
+all: compile get-deps test dialyze docs
+
+get-deps:
+	./rebar get-deps
+
+compile: get-deps
 	./rebar compile
 
-deps:
-	./rebar get-deps
+test: compile
+	./rebar eunit $(suite) skip_deps=true
+
+dialyze: build-plt
+	./rebar dialyze
+
+build-plt:
+	./rebar build-plt
 
 docs:
 	./rebar doc
-
-check:
-	./rebar check-plt
-	./rebar dialyze
-
-test:
-	./rebar eunit $(suite) skip_deps=true
-
 
 conf_clean:
 	@:

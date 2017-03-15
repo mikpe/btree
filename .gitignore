@@ -1,0 +1,10 @@
+.eunit
+.rebar
+deps
+dialyzer.plt
+dialyzer_plt
+doc/edoc-info
+doc/*.css
+doc/*.html
+doc/*.png
+local.plt
