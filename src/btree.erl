@@ -68,17 +68,17 @@ item_set_k({_K, P}, K) -> {K, P}.
 
 -record(page, % m == size(e)
         { pageid :: pageid()
-        , p0 :: pageid() % subtree with keys k' < item_k(element(1, e))
-        , e :: {item()}
+        , p0     :: pageid() % subtree with keys k' < item_k(element(1, e))
+        , e      :: {item()} | {}
         }).
 
 -record(btree,
         { order :: pos_integer() % aka N
-        , root :: #page{}
+        , root  :: #page{}
         }).
 
--type item(T) :: {K :: T, P :: pageid()}.
--type page(T) :: #page{e :: {item(T)}}.
+-type item(T)  :: {K :: T, P :: pageid()}.
+-type page(T)  :: #page{e :: {item(T)} | {}}.
 -type btree(T) :: #btree{root :: page(T)}.
 
 %%%_* Creating an empty B-tree =================================================
