@@ -3,19 +3,19 @@ suite=$(if $(SUITE), suite=$(SUITE), )
 DIALYZER_OPTIONS := --fullpath --no_native -Wunderspecs
 DIALYZER_PLT     := ./dialyzer.plt
 
-.PHONY: default all compile deps test dialyze docs clean
+.PHONY: default all get-deps compile deps test dialyze docs clean
 
 default: compile
 
-all: compile deps test dialyze docs
+all: compile get-deps test dialyze docs
 
-compile:
-	./rebar compile
-
-deps:
+get-deps:
 	./rebar get-deps
 
-test:
+compile: get-deps
+	./rebar compile
+
+test: compile
 	./rebar eunit $(suite) skip_deps=true
 
 dialyze: build-plt
