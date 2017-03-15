@@ -1,5 +1,6 @@
 {application, btree,
  [{description, "B-tree sets library"},
   {vsn, git},
-  {modules, []}
+  {modules, []},
+  {applications, [kernel, stdlib]}
  ]}.
