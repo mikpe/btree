@@ -53,7 +53,6 @@
 -type pageid() :: pos_integer() | ?NOPAGEID.
 
 %% An item is a pair of a key and a page reference.
-%% TODO: inline as 2 consecutive elements in the page's E vector?
 
 -type item() :: {K :: term(),
                  P :: pageid()}. % subtree with keys K' > K
@@ -224,7 +223,8 @@ search_page(IO, X, P = #page{p0 = P0, e = E}, Path) ->
 %%%
 %%% Search a page's item vector E for key X.
 %%% Return {found, K} if found at index K,
-%%% otherwise {not_found, R} [FIXME: proper defn of R].
+%%% otherwise {not_found, R} where R is the index where the B-tree traversal
+%%% should descend.
 
 binsearch(E, X) ->
   binsearch(E, X, 1, size(E)).
