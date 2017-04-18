@@ -198,8 +198,9 @@ member(IO, X, #btree{root = A}) ->
 %%% index where the B-tree traversal should descend.
 %%% Callers MUST match on ?not_found(R) before matching on ?found(K).
 
--define(not_found(R), {not_found, R}).
--define(found(K), {found, K}).
+-define(make_not_found(R), [R | []]).
+-define(not_found(R), [R | _]).
+-define(found(K), K).
 
 binsearch(E, X) ->
   binsearch(E, X, 1, size(E)).
@@ -211,7 +212,7 @@ binsearch(E, X, L, R) when R >= L ->
      true -> binsearch(E, X, K + 1, R)
   end;
 binsearch(_E, _X, _L, R) ->
-  ?not_found(R).
+  ?make_not_found(R).
 
 %%%_* B-tree Search ============================================================
 %%%
