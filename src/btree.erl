@@ -209,14 +209,14 @@ search_pageid(IO, X, A, Path) ->
 
 search_page(IO, X, P = #page{p0 = P0, e = E}, Path) ->
   case binsearch(E, X) of
-    {found, K} ->
-      {true, P, K, Path};
     {not_found, R} ->
       Q =
         if R =:= 0 -> P0;
            true -> item_p(element(R, E))
         end,
-      search_pageid(IO, X, Q, [{P, R} | Path])
+      search_pageid(IO, X, Q, [{P, R} | Path]);
+    {found, K} ->
+      {true, P, K, Path}
   end.
 
 %%%_* Binary search within a page ==============================================
@@ -384,6 +384,17 @@ delete(Cache1, N, X, APageId) ->
 delete(Cache2, N, X, APageId, A = #page{p0 = AP0, e = AE}) ->
   ?dbg("delete(~p, ~p)~n", [X, A]),
   case binsearch(AE, X) of
+    {not_found, R} ->
+      QPageId =
+        if R =:= 0 -> AP0;
+           true -> item_p(element(R, AE))
+        end,
+      case delete(Cache2, N, X, QPageId) of
+        {Cache3, true} ->
+          underflow(Cache3, N, APageId, QPageId, R);
+        {Cache3, false} ->
+          {Cache3, false}
+      end;
     {found, K} ->
       %% found, now delete a^.e[k]
       R = K - 1,
@@ -403,17 +414,6 @@ delete(Cache2, N, X, APageId, A = #page{p0 = AP0, e = AE}) ->
             {Cache3, false} ->
               {Cache3, false}
           end
-      end;
-    {not_found, R} ->
-      QPageId =
-        if R =:= 0 -> AP0;
-           true -> item_p(element(R, AE))
-        end,
-      case delete(Cache2, N, X, QPageId) of
-        {Cache3, true} ->
-          underflow(Cache3, N, APageId, QPageId, R);
-        {Cache3, false} ->
-          {Cache3, false}
       end
   end.
 
