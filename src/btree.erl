@@ -191,6 +191,25 @@ member(IO, X, #btree{root = A}) ->
     {false, _Path} -> false
   end.
 
+%%%_* Binary search within a page ==============================================
+%%%
+%%% Search a page's item vector E for key X.
+%%% Return {found, K} if found at index K,
+%%% otherwise {not_found, R} where R is the index where the B-tree traversal
+%%% should descend.
+
+binsearch(E, X) ->
+  binsearch(E, X, 1, size(E)).
+binsearch(E, X, L, R) when R >= L ->
+  K = (L + R) div 2,
+  KX = item_k(element(K, E)),
+  if X < KX -> binsearch(E, X, L, K - 1);
+     X =:= KX -> {found, K};
+     true -> binsearch(E, X, K + 1, R)
+  end;
+binsearch(_E, _X, _L, R) ->
+  {not_found, R}.
+
 %%%_* B-tree Search ============================================================
 %%%
 %%% Search a B-tree for key X.
@@ -218,25 +237,6 @@ search_page(IO, X, P = #page{p0 = P0, e = E}, Path) ->
     {found, K} ->
       {true, P, K, Path}
   end.
-
-%%%_* Binary search within a page ==============================================
-%%%
-%%% Search a page's item vector E for key X.
-%%% Return {found, K} if found at index K,
-%%% otherwise {not_found, R} where R is the index where the B-tree traversal
-%%% should descend.
-
-binsearch(E, X) ->
-  binsearch(E, X, 1, size(E)).
-binsearch(E, X, L, R) when R >= L ->
-  K = (L + R) div 2,
-  KX = item_k(element(K, E)),
-  if X < KX -> binsearch(E, X, L, K - 1);
-     X =:= KX -> {found, K};
-     true -> binsearch(E, X, K + 1, R)
-  end;
-binsearch(_E, _X, _L, R) ->
-  {not_found, R}.
 
 %%%_* B-tree all_keys ==========================================================
 
