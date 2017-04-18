@@ -31,6 +31,7 @@
         , delete/3
         , mkio/5
         ]).
+-on_load(init/0).
 
 -export([check/2, print/2]). % for debugging only
 
@@ -198,9 +199,12 @@ member(IO, X, #btree{root = A}) ->
 %%% index where the B-tree traversal should descend.
 %%% Callers MUST match on ?not_found(R) before matching on ?found(K).
 
--define(make_not_found(R), [R | []]).
 -define(not_found(R), [R | _]).
 -define(found(K), K).
+
+-ifdef(notdef). % pure Erlang reference implementation
+
+-define(make_not_found(R), [R | []]).
 
 binsearch(E, X) ->
   binsearch(E, X, 1, size(E)).
@@ -213,6 +217,13 @@ binsearch(E, X, L, R) when R >= L ->
   end;
 binsearch(_E, _X, _L, R) ->
   ?make_not_found(R).
+
+-else. % NIF implementation
+
+binsearch(_E, _X) ->
+  erlang:nif_error(binsearch).
+
+-endif.
 
 %%%_* B-tree Search ============================================================
 %%%
@@ -646,6 +657,26 @@ print_page(IO, #page{p0 = P0, e = E}, L) ->
   [print_pageid(IO, item_p(element(I, E)), L + 1)
    || I <- lists:seq(1, size(E))],
   ok.
+
+%%%_* NIFs =====================================================================
+
+-include("nifversion.hrl").
+
+init() ->
+  PrivDir =
+    case code:priv_dir(?MODULE) of
+      {error, bad_name} ->
+        case file:read_file_info("../priv") of
+          {ok, _} ->
+            "../priv";
+          {error, _} ->
+            "priv"
+        end;
+      Dir ->
+        Dir
+    end,
+  SoName = filename:join(PrivDir, ?SONAME),
+  erlang:load_nif(SoName, 0).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:

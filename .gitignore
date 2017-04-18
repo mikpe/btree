@@ -8,3 +8,4 @@ doc/*.css
 doc/*.html
 doc/*.png
 local.plt
+compile_commands.json
