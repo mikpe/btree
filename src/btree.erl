@@ -31,6 +31,7 @@
         , delete/3
         , mkio/5
         ]).
+-on_load(init/0).
 
 -export([check/2, print/2]). % for debugging only
 
@@ -191,6 +192,39 @@ member(IO, X, #btree{root = A}) ->
     {false, _Path} -> false
   end.
 
+%%%_* Binary search within a page ==============================================
+%%%
+%%% Search a page's item vector E for key X.
+%%% Return ?found(K) if found at index K, otherwise ?not_found(R) where R is the
+%%% index where the B-tree traversal should descend.
+%%% Callers MUST match on ?not_found(R) before matching on ?found(K).
+
+-define(not_found(R), [R | _]).
+-define(found(K), K).
+
+-ifdef(notdef). % pure Erlang reference implementation
+
+-define(make_not_found(R), [R | []]).
+
+binsearch(E, X) ->
+  binsearch(E, X, 1, size(E)).
+binsearch(E, X, L, R) when R >= L ->
+  K = (L + R) div 2,
+  KX = item_k(element(K, E)),
+  if X < KX -> binsearch(E, X, L, K - 1);
+     X =:= KX -> ?found(K);
+     true -> binsearch(E, X, K + 1, R)
+  end;
+binsearch(_E, _X, _L, R) ->
+  ?make_not_found(R).
+
+-else. % NIF implementation
+
+binsearch(_E, _X) ->
+  erlang:nif_error(binsearch).
+
+-endif.
+
 %%%_* B-tree Search ============================================================
 %%%
 %%% Search a B-tree for key X.
@@ -209,34 +243,15 @@ search_pageid(IO, X, A, Path) ->
 
 search_page(IO, X, P = #page{p0 = P0, e = E}, Path) ->
   case binsearch(E, X) of
-    {found, K} ->
-      {true, P, K, Path};
-    {not_found, R} ->
+    ?not_found(R) ->
       Q =
         if R =:= 0 -> P0;
            true -> item_p(element(R, E))
         end,
-      search_pageid(IO, X, Q, [{P, R} | Path])
+      search_pageid(IO, X, Q, [{P, R} | Path]);
+    ?found(K) ->
+      {true, P, K, Path}
   end.
-
-%%%_* Binary search within a page ==============================================
-%%%
-%%% Search a page's item vector E for key X.
-%%% Return {found, K} if found at index K,
-%%% otherwise {not_found, R} where R is the index where the B-tree traversal
-%%% should descend.
-
-binsearch(E, X) ->
-  binsearch(E, X, 1, size(E)).
-binsearch(E, X, L, R) when R >= L ->
-  K = (L + R) div 2,
-  KX = item_k(element(K, E)),
-  if X < KX -> binsearch(E, X, L, K - 1);
-     X =:= KX -> {found, K};
-     true -> binsearch(E, X, K + 1, R)
-  end;
-binsearch(_E, _X, _L, R) ->
-  {not_found, R}.
 
 %%%_* B-tree all_keys ==========================================================
 
@@ -384,7 +399,18 @@ delete(Cache1, N, X, APageId) ->
 delete(Cache2, N, X, APageId, A = #page{p0 = AP0, e = AE}) ->
   ?dbg("delete(~p, ~p)~n", [X, A]),
   case binsearch(AE, X) of
-    {found, K} ->
+    ?not_found(R) ->
+      QPageId =
+        if R =:= 0 -> AP0;
+           true -> item_p(element(R, AE))
+        end,
+      case delete(Cache2, N, X, QPageId) of
+        {Cache3, true} ->
+          underflow(Cache3, N, APageId, QPageId, R);
+        {Cache3, false} ->
+          {Cache3, false}
+      end;
+    ?found(K) ->
       %% found, now delete a^.e[k]
       R = K - 1,
       QPageId =
@@ -403,17 +429,6 @@ delete(Cache2, N, X, APageId, A = #page{p0 = AP0, e = AE}) ->
             {Cache3, false} ->
               {Cache3, false}
           end
-      end;
-    {not_found, R} ->
-      QPageId =
-        if R =:= 0 -> AP0;
-           true -> item_p(element(R, AE))
-        end,
-      case delete(Cache2, N, X, QPageId) of
-        {Cache3, true} ->
-          underflow(Cache3, N, APageId, QPageId, R);
-        {Cache3, false} ->
-          {Cache3, false}
       end
   end.
 
@@ -642,6 +657,26 @@ print_page(IO, #page{p0 = P0, e = E}, L) ->
   [print_pageid(IO, item_p(element(I, E)), L + 1)
    || I <- lists:seq(1, size(E))],
   ok.
+
+%%%_* NIFs =====================================================================
+
+-include("nifversion.hrl").
+
+init() ->
+  PrivDir =
+    case code:priv_dir(?MODULE) of
+      {error, bad_name} ->
+        case file:read_file_info("../priv") of
+          {ok, _} ->
+            "../priv";
+          {error, _} ->
+            "priv"
+        end;
+      Dir ->
+        Dir
+    end,
+  SoName = filename:join(PrivDir, ?SONAME),
+  erlang:load_nif(SoName, 0).
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
