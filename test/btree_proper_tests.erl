@@ -52,7 +52,7 @@ do_test() ->
   dotest(100).
 
 dotest(N) ->
-  true = proper:quickcheck(?MODULE:prop_seq(), N),
+  true = proper:quickcheck(?MODULE:prop_seq(), [N, nocolors]),
   ok.
 
 prop_seq() ->
