@@ -1,9 +1,9 @@
 %%%----------------------------------------------------------------
 %%% File        : btree_proper_tests.erl
 %%% Author      : Mikael Pettersson <mikael.pettersson@klarna.com>
-%%% Description : Proper tests for Erlang implementation of B-tree sets
+%%% Description : PropEr tests for Erlang implementation of B-tree sets
 %%%
-%%% Copyright (c) 2016 Klarna AB
+%%% Copyright (c) 2016-2018 Klarna Bank AB
 %%%
 %%% This file is provided to you under the Apache License,
 %%% Version 2.0 (the "License"); you may not use this file
@@ -24,8 +24,7 @@
 
 -behaviour(proper_statem).
 
--export([ test/0
-        , test/1
+-export([ dotest/1
         , prop_seq/0
         ]).
 
@@ -49,10 +48,10 @@
 
 -record(st, {set}).
 
-test() ->
-  test(100).
+do_test() ->
+  dotest(100).
 
-test(N) ->
+dotest(N) ->
   true = proper:quickcheck(?MODULE:prop_seq(), N),
   ok.
 
