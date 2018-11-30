@@ -48,8 +48,8 @@
 
 -record(st, {set}).
 
-do_test() ->
-  dotest(100).
+do_test_() ->
+  {timeout, 60, fun() -> dotest(100) end}.
 
 dotest(N) ->
   true = proper:quickcheck(?MODULE:prop_seq(), [N, nocolors]),
