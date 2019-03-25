@@ -4,7 +4,7 @@
 %%% Author      : Mikael Pettersson <mikael.pettersson@klarna.com>
 %%% Description : Erlang implementation of B-tree sets
 %%%
-%%% Copyright (c) 2016-2017 Klarna AB
+%%% Copyright (c) 2016-2019 Klarna AB
 %%%
 %%% This file is provided to you under the Apache License,
 %%% Version 2.0 (the "License"); you may not use this file
@@ -542,6 +542,7 @@ cache_state(#cache{entries = Entries}, PageId) ->
 cache_flush(#cache{io = IO, entries = Entries}) ->
   [case Entry of
      {_PageId, clean, _Page} -> ok;
+     {_PageId = ?NOPAGEID, dirty, _Page} -> ok;
      {_PageId, dirty, Page} -> page_write(IO, Page);
      {PageId, deleted} -> page_delete(IO, PageId)
    end || Entry <- Entries],

@@ -3,7 +3,7 @@
 %%% Author      : Mikael Pettersson <mikael.pettersson@klarna.com>
 %%% Description : PropEr tests for Erlang implementation of B-tree sets
 %%%
-%%% Copyright (c) 2016-2018 Klarna Bank AB
+%%% Copyright (c) 2016-2019 Klarna Bank AB
 %%%
 %%% This file is provided to you under the Apache License,
 %%% Version 2.0 (the "License"); you may not use this file
@@ -174,7 +174,7 @@ page_read(ETS, PageId) ->
   [{_PageId, Data}] = ets:lookup(ETS, PageId),
   {ok, Data}.
 
-page_write(ETS, PageId, Data) ->
+page_write(ETS, PageId, Data) when PageId =/= [] ->
   ets:insert(ETS, {PageId, Data}),
   ok.
 
