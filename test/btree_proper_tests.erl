@@ -22,6 +22,11 @@
 
 -module(btree_proper_tests).
 
+-include_lib("proper/include/proper.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
+-ifdef(TEST).
+
 -behaviour(proper_statem).
 
 -export([ dotest/1
@@ -43,8 +48,6 @@
         , all_keys/0
         ]).
 
--include_lib("proper/include/proper.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 -record(st, {set}).
 
@@ -185,6 +188,8 @@ page_allocate(ETS) ->
 page_delete(ETS, PageId) ->
   ets:delete(ETS, PageId),
   ok.
+
+-endif.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
