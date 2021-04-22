@@ -23,9 +23,13 @@
 %%%----------------------------------------------------------------
 
 -module(btree_tests).
--export([io_init/0]).
 
 -include_lib("eunit/include/eunit.hrl").
+
+-ifdef(TEST).
+
+-export([io_init/0]).
+
 
 %% Exercise an order-2 B-tree using a sequence of insertions and deletions
 %% taken from [Wirth76].
@@ -105,6 +109,8 @@ page_allocate(ETS) ->
 page_delete(ETS, PageId) ->
   ets:delete(ETS, PageId),
   ok.
+
+-endif.
 
 %%%_* Emacs ====================================================================
 %%% Local Variables:
