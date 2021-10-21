@@ -4,7 +4,7 @@
 %%% Author      : Mikael Pettersson <mikael.pettersson@klarna.com>
 %%% Description : Erlang implementation of B-tree sets
 %%%
-%%% Copyright (c) 2016-2019 Klarna AB
+%%% Copyright (c) 2016-2021 Klarna AB
 %%%
 %%% This file is provided to you under the Apache License,
 %%% Version 2.0 (the "License"); you may not use this file
@@ -25,6 +25,7 @@
 -module(btree).
 -export([ new/1
         , from_list/3
+        , is_empty/1
         , member/3
         , all_keys/2
         , insert/3
@@ -181,6 +182,14 @@ to_pageid(IO, #node{e = E, right = R}) ->
   Page = to_page(IO, PageId, E, R),
   page_write(IO, Page),
   PageId.
+
+%%%_* Emptiness check ==========================================================
+%%%
+%%% Return true if a B-tree is empty, false otherwise.
+
+-spec is_empty(btree(term())) -> boolean().
+is_empty(#btree{root = #page{e = E}}) ->
+  E =:= {}.
 
 %%%_* Membership check =========================================================
 %%%

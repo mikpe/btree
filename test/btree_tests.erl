@@ -4,7 +4,7 @@
 %%% Author      : Mikael Pettersson <mikael.pettersson@klarna.com>
 %%% Description : Tests for Erlang implementation of B-tree sets
 %%%
-%%% Copyright (c) 2016-2019 Klarna AB
+%%% Copyright (c) 2016-2021 Klarna AB
 %%%
 %%% This file is provided to you under the Apache License,
 %%% Version 2.0 (the "License"); you may not use this file
@@ -36,8 +36,11 @@
 wirth_test() ->
   Keys = wirth_keys(),
   {ETS, IO} = io_init(),
-  Btree1 = insert_all(IO, btree:new(2), Keys),
+  Btree0 = btree:new(2),
+  ?assertEqual(true, btree:is_empty(Btree0)),
+  Btree1 = insert_all(IO, Btree0, Keys),
   Btree2 = delete_all(IO, Btree1, lists:reverse(Keys)),
+  ?assertEqual(true, btree:is_empty(Btree2)),
   ?assertEqual([], btree:all_keys(IO, Btree2)),
   io_fini(ETS).
 
@@ -55,6 +58,7 @@ insert_one(IO, Btree0, Key) ->
       ok -> Btree0;
       {ok, Btree1} -> Btree1
     end,
+  ?assertEqual(false, btree:is_empty(Btree)),
   ?assertEqual(true, btree:member(IO, Key, Btree)),
   ?assertEqual(ok, btree:check(IO, Btree)),
   Btree.

@@ -3,7 +3,7 @@
 %%% Author      : Mikael Pettersson <mikael.pettersson@klarna.com>
 %%% Description : PropEr tests for Erlang implementation of B-tree sets
 %%%
-%%% Copyright (c) 2016-2019 Klarna Bank AB
+%%% Copyright (c) 2016-2021 Klarna Bank AB
 %%%
 %%% This file is provided to you under the Apache License,
 %%% Version 2.0 (the "License"); you may not use this file
@@ -45,6 +45,7 @@
 -export([ member/1
         , insert/1
         , delete/1
+        , is_empty/0
         , all_keys/0
         ]).
 
@@ -82,6 +83,7 @@ command(#st{}) ->
   proper_types:oneof([ {call, ?MODULE, member, [key()]}
                      , {call, ?MODULE, insert, [key()]}
                      , {call, ?MODULE, delete, [key()]}
+                     , {call, ?MODULE, is_empty, []}
                      , {call, ?MODULE, all_keys, []}
                      ]).
 
@@ -98,6 +100,9 @@ postcondition(_St, {call, ?MODULE, insert, [Key]}, {IO, Btree}) ->
   valid(IO, Btree) andalso btree:member(IO, Key, Btree);
 postcondition(_St, {call, ?MODULE, delete, [Key]}, {IO, Btree}) ->
   valid(IO, Btree) andalso not btree:member(IO, Key, Btree);
+postcondition(#st{set = Set}, {call, ?MODULE, is_empty, []},
+              {_IO, _Btree, Result}) ->
+  sets:is_empty(Set) =:= Result;
 postcondition(#st{set = Set}, {call, ?MODULE, all_keys, []},
               {_IO, _Btree, Result}) ->
   lists:sort(sets:to_list(Set)) =:= lists:sort(Result).
@@ -116,6 +121,8 @@ next_state(St = #st{set = Set}, _Result, {call, ?MODULE, insert, [Key]}) ->
   St#st{set = sets:add_element(Key, Set)};
 next_state(St = #st{set = Set}, _Result, {call, ?MODULE, delete, [Key]}) ->
   St#st{set = sets:del_element(Key, Set)};
+next_state(St, _Result, {call, ?MODULE, is_empty, []}) ->
+  St;
 next_state(St, _Result, {call, ?MODULE, all_keys, []}) ->
   St.
 
@@ -138,6 +145,10 @@ delete(Key) ->
     ok -> {IO, Btree0};
     {ok, Btree1} -> put_btree(Btree1), {IO, Btree1}
   end.
+
+is_empty() ->
+  {IO, Btree} = get_io_btree(),
+  {IO, Btree, btree:is_empty(Btree)}.
 
 all_keys() ->
   {IO, Btree} = get_io_btree(),
