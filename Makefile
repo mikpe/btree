@@ -1,35 +1,17 @@
-suite=$(if $(SUITE), suite=$(SUITE), )
+REBAR3=rebar3
 
-DIALYZER_OPTIONS := --fullpath --no_native -Wunderspecs
-DIALYZER_PLT     := ./dialyzer.plt
+.PHONY: all compile test dialyze clean
 
-.PHONY: default all get-deps compile deps test dialyze docs clean
+all:
+	$(REBAR3) do compile, dialyzer, eunit
 
-default: compile
+compile:
+	$(REBAR3) compile
 
-all: compile get-deps test dialyze docs
-
-get-deps:
-	./rebar get-deps
-
-compile: get-deps
-	./rebar compile
-
-test: compile
-	./rebar eunit $(suite) skip_deps=true
-
-dialyze: build-plt
-	./rebar dialyze
-
-build-plt:
-	./rebar build-plt
-
-docs:
-	./rebar doc
-
-conf_clean:
-	@:
+test:
+	$(REBAR3) eunit
 
 clean:
-	./rebar clean
-	$(RM) doc/*.html doc/*edoc-info doc/erlang.png doc/stylesheet.css
+	$(REBAR3) clean
+	rm -f TEST-*.xml priv/btree*.so rebar.lock
+	rm -rf _build
